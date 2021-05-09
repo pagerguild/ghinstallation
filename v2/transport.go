@@ -11,12 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/go-github/v29/github"
+	"github.com/google/go-github/v35/github"
 )
 
 const (
-	// acceptHeader is the GitHub Apps Preview Accept header.
-	acceptHeader = "application/vnd.github.machine-man-preview+json"
+	acceptHeader = "application/vnd.github.v3+json"
 	apiBaseURL   = "https://api.github.com"
 )
 
@@ -47,6 +46,20 @@ type accessToken struct {
 	ExpiresAt    time.Time                      `json:"expires_at"`
 	Permissions  github.InstallationPermissions `json:"permissions,omitempty"`
 	Repositories []github.Repository            `json:"repositories,omitempty"`
+}
+
+// HTTPError represents a custom error for failing HTTP operations.
+// Example in our usecase: refresh access token operation.
+// It enables the caller to inspect the root cause and response.
+type HTTPError struct {
+	Message        string
+	RootCause      error
+	InstallationID int64
+	Response       *http.Response
+}
+
+func (e *HTTPError) Error() string {
+	return e.Message
 }
 
 var _ http.RoundTripper = &Transport{}
@@ -116,7 +129,7 @@ func (t *Transport) Token(ctx context.Context) (string, error) {
 	if t.token == nil || t.token.ExpiresAt.Add(-time.Minute).Before(time.Now()) {
 		// Token is not set or expired/nearly expired, so refresh
 		if err := t.refreshToken(ctx); err != nil {
-			return "", fmt.Errorf("could not refresh installation id %v's token: %s", t.installationID, err)
+			return "", fmt.Errorf("could not refresh installation id %v's token: %w", t.installationID, err)
 		}
 	}
 
@@ -164,14 +177,22 @@ func (t *Transport) refreshToken(ctx context.Context) error {
 	t.appsTransport.BaseURL = t.BaseURL
 	t.appsTransport.Client = t.Client
 	resp, err := t.appsTransport.RoundTrip(req)
-	if err != nil {
-		return fmt.Errorf("could not get access_tokens from GitHub API for installation ID %v: %v", t.installationID, err)
+	e := &HTTPError{
+		RootCause:      err,
+		InstallationID: t.installationID,
+		Response:       resp,
 	}
-	defer resp.Body.Close()
+	if err != nil {
+		e.Message = fmt.Sprintf("could not get access_tokens from GitHub API for installation ID %v: %v", t.installationID, err)
+		return e
+	}
 
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("request %+v received non 2xx response status %q with body %+v and TLS %+v", resp.Request, resp.Body, resp.Request, resp.TLS)
+		e.Message = fmt.Sprintf("received non 2xx response status %q when fetching %v", resp.Status, req.URL)
+		return e
 	}
+	// Closing body late, to provide caller a chance to inspect body in an error / non-200 response status situation
+	defer resp.Body.Close()
 
 	return json.NewDecoder(resp.Body).Decode(&t.token)
 }
