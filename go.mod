@@ -1,4 +1,4 @@
-module github.com/bradleyfalzon/ghinstallation
+module github.com/missedone/ghinstallation/v2
 
 go 1.13
 
