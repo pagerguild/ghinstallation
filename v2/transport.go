@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -18,6 +18,12 @@ const (
 	acceptHeader = "application/vnd.github.v3+json"
 	apiBaseURL   = "https://api.github.com"
 )
+
+const (
+	secondaryLimitConcurrentRequests = 100
+)
+
+var semaphores = newSemaphoreMap(secondaryLimitConcurrentRequests)
 
 // Transport provides a http.RoundTripper by wrapping an existing
 // http.RoundTripper and provides GitHub Apps authentication as an
@@ -36,8 +42,9 @@ type Transport struct {
 	InstallationTokenOptions *github.InstallationTokenOptions // parameters restrict a token's access
 	appsTransport            *AppsTransport
 
-	mu    *sync.Mutex  // mu protects token
-	token *accessToken // token is the installation's access token
+	mu        sync.Mutex // mu protects token
+	semaphore semaphore
+	token     *accessToken // token is the installation's access token
 }
 
 // accessToken is an installation access token response from GitHub
@@ -66,7 +73,7 @@ var _ http.RoundTripper = &Transport{}
 
 // NewKeyFromFile returns a Transport using a private key from file.
 func NewKeyFromFile(tr http.RoundTripper, appID, installationID int64, privateKeyFile string) (*Transport, error) {
-	privateKey, err := ioutil.ReadFile(privateKeyFile)
+	privateKey, err := os.ReadFile(privateKeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("could not read private key: %s", err)
 	}
@@ -104,12 +111,19 @@ func NewFromAppsTransport(atr *AppsTransport, installationID int64) *Transport {
 		appID:          atr.appID,
 		installationID: installationID,
 		appsTransport:  atr,
-		mu:             &sync.Mutex{},
+		semaphore:      semaphores.getSemaphore(installationID),
 	}
 }
 
 // RoundTrip implements http.RoundTripper interface.
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+
+	err := t.semaphore.acquire(req.Context())
+	if err != nil {
+		return nil, fmt.Errorf("timed out waiting to send http request: %w", err)
+	}
+	defer t.semaphore.release()
+
 	token, err := t.Token(req.Context())
 	if err != nil {
 		return nil, err
