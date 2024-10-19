@@ -3,12 +3,11 @@ package ghinstallation
 import (
 	"crypto/rsa"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"strconv"
+	"os"
 	"time"
 
-	jwt "github.com/dgrijalva/jwt-go/v4"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // AppsTransport provides a http.RoundTripper by wrapping an existing
@@ -20,20 +19,20 @@ import (
 //
 // See https://developer.github.com/apps/building-integrations/setting-up-and-registering-github-apps/about-authentication-options-for-github-apps/
 type AppsTransport struct {
-	BaseURL string            // BaseURL is the scheme and host for GitHub API, defaults to https://api.github.com
-	Client  Client            // Client to use to refresh tokens, defaults to http.Client with provided transport
-	tr      http.RoundTripper // tr is the underlying roundtripper being wrapped
-	key     *rsa.PrivateKey   // key is the GitHub App's private key
-	appID   int64             // appID is the GitHub App's ID
+	BaseURL  string            // BaseURL is the scheme and host for GitHub API, defaults to https://api.github.com
+	Client   Client            // Client to use to refresh tokens, defaults to http.Client with provided transport
+	tr       http.RoundTripper // tr is the underlying roundtripper being wrapped
+	key      *rsa.PrivateKey   // key is the GitHub App's private key
+	clientID string            // appID is the GitHub App's ID
 }
 
 // NewAppsTransportKeyFromFile returns a AppsTransport using a private key from file.
-func NewAppsTransportKeyFromFile(tr http.RoundTripper, appID int64, privateKeyFile string) (*AppsTransport, error) {
-	privateKey, err := ioutil.ReadFile(privateKeyFile)
+func NewAppsTransportKeyFromFile(tr http.RoundTripper, clientID string, privateKeyFile string) (*AppsTransport, error) {
+	privateKey, err := os.ReadFile(privateKeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("could not read private key: %s", err)
 	}
-	return NewAppsTransport(tr, appID, privateKey)
+	return NewAppsTransport(tr, clientID, privateKey)
 }
 
 // NewAppsTransport returns a AppsTransport using private key. The key is parsed
@@ -43,36 +42,36 @@ func NewAppsTransportKeyFromFile(tr http.RoundTripper, appID int64, privateKeyFi
 // installations to ensure reuse of underlying TCP connections.
 //
 // The returned Transport's RoundTrip method is safe to be used concurrently.
-func NewAppsTransport(tr http.RoundTripper, appID int64, privateKey []byte) (*AppsTransport, error) {
+func NewAppsTransport(tr http.RoundTripper, clientID string, privateKey []byte) (*AppsTransport, error) {
 	key, err := jwt.ParseRSAPrivateKeyFromPEM(privateKey)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse private key: %s", err)
 	}
-	return NewAppsTransportFromPrivateKey(tr, appID, key), nil
+	return NewAppsTransportFromPrivateKey(tr, clientID, key), nil
 }
 
 // NewAppsTransportFromPrivateKey returns an AppsTransport using a crypto/rsa.(*PrivateKey).
-func NewAppsTransportFromPrivateKey(tr http.RoundTripper, appID int64, key *rsa.PrivateKey) *AppsTransport {
+func NewAppsTransportFromPrivateKey(tr http.RoundTripper, clientID string, key *rsa.PrivateKey) *AppsTransport {
 	return &AppsTransport{
-		BaseURL: apiBaseURL,
-		Client:  &http.Client{Transport: tr},
-		tr:      tr,
-		key:     key,
-		appID:   appID,
+		BaseURL:  apiBaseURL,
+		Client:   &http.Client{Transport: tr},
+		tr:       tr,
+		key:      key,
+		clientID: clientID,
 	}
 }
 
 // RoundTrip implements http.RoundTripper interface.
-func (t *AppsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *AppsTransport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
 	// GitHub rejects expiry and issue timestamps that are not an integer,
 	// while the jwt-go library serializes to fractional timestamps.
 	// Truncate them before passing to jwt-go.
 	iss := time.Now().Add(-30 * time.Second).Truncate(time.Second)
 	exp := iss.Add(2 * time.Minute)
-	claims := &jwt.StandardClaims{
-		IssuedAt:  jwt.At(iss),
-		ExpiresAt: jwt.At(exp),
-		Issuer:    strconv.FormatInt(t.appID, 10),
+	claims := &jwt.RegisteredClaims{
+		IssuedAt:  jwt.NewNumericDate(iss),
+		ExpiresAt: jwt.NewNumericDate(exp),
+		Issuer:    t.clientID,
 	}
 	bearer := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 
@@ -84,6 +83,6 @@ func (t *AppsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.Header.Set("Authorization", "Bearer "+ss)
 	req.Header.Add("Accept", acceptHeader)
 
-	resp, err := t.tr.RoundTrip(req)
+	resp, err = t.tr.RoundTrip(req)
 	return resp, err
 }

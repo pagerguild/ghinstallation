@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
-	"github.com/google/go-github/v35/github"
+	"github.com/google/go-github/v62/github"
 )
 
 const (
@@ -31,12 +31,12 @@ type Transport struct {
 	BaseURL                  string                           // BaseURL is the scheme and host for GitHub API, defaults to https://api.github.com
 	Client                   Client                           // Client to use to refresh tokens, defaults to http.Client with provided transport
 	tr                       http.RoundTripper                // tr is the underlying roundtripper being wrapped
-	appID                    int64                            // appID is the GitHub App's ID
+	appID                    string                           // appID is the GitHub App's ID
 	installationID           int64                            // installationID is the GitHub App Installation ID
 	InstallationTokenOptions *github.InstallationTokenOptions // parameters restrict a token's access
 	appsTransport            *AppsTransport
 
-	mu    *sync.Mutex  // mu protects token
+	mu    sync.Mutex   // mu protects token
 	token *accessToken // token is the installation's access token
 }
 
@@ -65,8 +65,8 @@ func (e *HTTPError) Error() string {
 var _ http.RoundTripper = &Transport{}
 
 // NewKeyFromFile returns a Transport using a private key from file.
-func NewKeyFromFile(tr http.RoundTripper, appID, installationID int64, privateKeyFile string) (*Transport, error) {
-	privateKey, err := ioutil.ReadFile(privateKeyFile)
+func NewKeyFromFile(tr http.RoundTripper, appID string, installationID int64, privateKeyFile string) (*Transport, error) {
+	privateKey, err := os.ReadFile(privateKeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("could not read private key: %s", err)
 	}
@@ -86,7 +86,7 @@ type Client interface {
 // installations to ensure reuse of underlying TCP connections.
 //
 // The returned Transport's RoundTrip method is safe to be used concurrently.
-func New(tr http.RoundTripper, appID, installationID int64, privateKey []byte) (*Transport, error) {
+func New(tr http.RoundTripper, appID string, installationID int64, privateKey []byte) (*Transport, error) {
 	atr, err := NewAppsTransport(tr, appID, privateKey)
 	if err != nil {
 		return nil, err
@@ -101,15 +101,15 @@ func NewFromAppsTransport(atr *AppsTransport, installationID int64) *Transport {
 		BaseURL:        atr.BaseURL,
 		Client:         &http.Client{Transport: atr.tr},
 		tr:             atr.tr,
-		appID:          atr.appID,
+		appID:          atr.clientID,
 		installationID: installationID,
 		appsTransport:  atr,
-		mu:             &sync.Mutex{},
 	}
 }
 
 // RoundTrip implements http.RoundTripper interface.
-func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
+
 	token, err := t.Token(req.Context())
 	if err != nil {
 		return nil, err
@@ -117,7 +117,10 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	req.Header.Set("Authorization", "token "+token)
 	req.Header.Add("Accept", acceptHeader) // We add to "Accept" header to avoid overwriting existing req headers.
-	resp, err := t.tr.RoundTrip(req)
+	resp, err = t.tr.RoundTrip(req)
+	if err != nil {
+		return resp, err
+	}
 	return resp, err
 }
 
@@ -176,7 +179,9 @@ func (t *Transport) refreshToken(ctx context.Context) error {
 
 	t.appsTransport.BaseURL = t.BaseURL
 	t.appsTransport.Client = t.Client
-	resp, err := t.appsTransport.RoundTrip(req)
+	var resp *http.Response
+
+	resp, err = t.appsTransport.RoundTrip(req)
 	e := &HTTPError{
 		RootCause:      err,
 		InstallationID: t.installationID,

@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-github/v35/github"
+	"github.com/google/go-github/v62/github"
 )
 
 const (
 	installationID = 1
-	appID          = 2
+	appID          = "appID123"
 	token          = "abc123"
 )
 
@@ -117,7 +117,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestNewKeyFromFile(t *testing.T) {
-	tmpfile, err := ioutil.TempFile("", "example")
+	tmpfile, err := os.CreateTemp("", "example")
 	if err != nil {
 		t.Fatal(err)
 	}
