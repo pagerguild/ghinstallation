@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-github/v29/github"
+	"github.com/google/go-github/v62/github"
 )
 
 const (
@@ -241,7 +241,7 @@ func TestRefreshTokenWithParameters(t *testing.T) {
 	}
 	tr.InstallationTokenOptions = installationTokenOptions
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/app/installations/%v/access_tokens", tr.BaseURL, tr.installationID), body)
+	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/app/installations/%v/access_tokens", tr.BaseURL, tr.installationID), body)
 	if _, err := tr.RoundTrip(req); err != nil {
 		t.Fatalf("error calling RoundTrip: %v", err)
 	}

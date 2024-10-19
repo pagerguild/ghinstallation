@@ -3,8 +3,8 @@ package ghinstallation
 import (
 	"crypto/rsa"
 	"fmt"
-	"io/ioutil"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -29,7 +29,7 @@ type AppsTransport struct {
 
 // NewAppsTransportKeyFromFile returns a AppsTransport using a private key from file.
 func NewAppsTransportKeyFromFile(tr http.RoundTripper, appID int64, privateKeyFile string) (*AppsTransport, error) {
-	privateKey, err := ioutil.ReadFile(privateKeyFile)
+	privateKey, err := os.ReadFile(privateKeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("could not read private key: %s", err)
 	}
@@ -52,7 +52,7 @@ func NewAppsTransport(tr http.RoundTripper, appID int64, privateKey []byte) (*Ap
 }
 
 // NewAppsTransportFromPrivateKey returns an AppsTransport using a crypto/rsa.(*PrivateKey).
-func NewAppsTransportFromPrivateKey(tr http.RoundTripper, appID int64, key *rsa.PrivateKey) (*AppsTransport) {
+func NewAppsTransportFromPrivateKey(tr http.RoundTripper, appID int64, key *rsa.PrivateKey) *AppsTransport {
 	return &AppsTransport{
 		BaseURL: apiBaseURL,
 		Client:  &http.Client{Transport: tr},
