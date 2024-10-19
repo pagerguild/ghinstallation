@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/google/go-github/v62/github"
+
+	"github.com/pagerguild/ghinstallation/v2/internal/ratelimit"
 )
 
 const (
@@ -21,9 +23,10 @@ const (
 
 const (
 	secondaryLimitConcurrentRequests = 100
+	rateLimitCacheSize               = 1000
 )
 
-var semaphores = newSemaphoreMap(secondaryLimitConcurrentRequests)
+var rateLimiters = ratelimit.NewRateLimiterCache(secondaryLimitConcurrentRequests, rateLimitCacheSize)
 
 // Transport provides a http.RoundTripper by wrapping an existing
 // http.RoundTripper and provides GitHub Apps authentication as an
@@ -42,10 +45,15 @@ type Transport struct {
 	InstallationTokenOptions *github.InstallationTokenOptions // parameters restrict a token's access
 	appsTransport            *AppsTransport
 
-	mu        sync.Mutex // mu protects token
-	semaphore semaphore
-	token     *accessToken // token is the installation's access token
+	mu          sync.Mutex // mu protects token
+	rateLimiter *ratelimit.RateLimiter
+	token       *accessToken // token is the installation's access token
 }
+
+type (
+	GitHubRateLimitInfo = ratelimit.GitHubRateLimitInfo
+	ErrorWithRateLimit  = ratelimit.ErrorWithRateLimit
+)
 
 // accessToken is an installation access token response from GitHub
 type accessToken struct {
@@ -63,6 +71,7 @@ type HTTPError struct {
 	RootCause      error
 	InstallationID int64
 	Response       *http.Response
+	RateLimitInfo  GitHubRateLimitInfo
 }
 
 func (e *HTTPError) Error() string {
@@ -111,18 +120,16 @@ func NewFromAppsTransport(atr *AppsTransport, installationID int64) *Transport {
 		appID:          atr.appID,
 		installationID: installationID,
 		appsTransport:  atr,
-		semaphore:      semaphores.getSemaphore(installationID),
+		rateLimiter:    rateLimiters.GetRateLimiter(installationID),
 	}
 }
 
 // RoundTrip implements http.RoundTripper interface.
-func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
-
-	err := t.semaphore.acquire(req.Context())
-	if err != nil {
+func (t *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
+	if err = t.rateLimiter.Acquire(req.Context()); err != nil {
 		return nil, fmt.Errorf("timed out waiting to send http request: %w", err)
 	}
-	defer t.semaphore.release()
+	defer t.rateLimiter.Release(resp)
 
 	token, err := t.Token(req.Context())
 	if err != nil {
@@ -131,7 +138,10 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	req.Header.Set("Authorization", "token "+token)
 	req.Header.Add("Accept", acceptHeader) // We add to "Accept" header to avoid overwriting existing req headers.
-	resp, err := t.tr.RoundTrip(req)
+	resp, err = t.tr.RoundTrip(req)
+	if err != nil {
+		return resp, ratelimit.NewErrorWithRateLimit(resp, err)
+	}
 	return resp, err
 }
 
@@ -203,6 +213,7 @@ func (t *Transport) refreshToken(ctx context.Context) error {
 
 	if resp.StatusCode/100 != 2 {
 		e.Message = fmt.Sprintf("received non 2xx response status %q when fetching %v", resp.Status, req.URL)
+		e.RateLimitInfo = ratelimit.NewGitHubRateLimitInfo(resp)
 		return e
 	}
 	// Closing body late, to provide caller a chance to inspect body in an error / non-200 response status situation

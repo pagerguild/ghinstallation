@@ -117,7 +117,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestNewKeyFromFile(t *testing.T) {
-	tmpfile, err := ioutil.TempFile("", "example")
+	tmpfile, err := os.CreateTemp("", "example")
 	if err != nil {
 		t.Fatal(err)
 	}

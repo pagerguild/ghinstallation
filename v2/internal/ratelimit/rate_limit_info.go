@@ -1,4 +1,4 @@
-package ghinstallation
+package ratelimit
 
 import (
 	"net/http"
@@ -26,6 +26,10 @@ func (rateLimit GitHubRateLimitInfo) When() time.Time {
 	return time.Unix(rateLimit.Reset, 0)
 }
 
+func (rateLimit GitHubRateLimitInfo) Valid() bool {
+	return rateLimit.Reset != 0 || rateLimit.Remaining != 0 || rateLimit.Used != 0
+}
+
 // TimeToReset returns the time.Duration until the window will reset.
 func (rateLimit GitHubRateLimitInfo) TimeToReset() time.Duration {
 	return time.Until(rateLimit.When())
@@ -38,6 +42,22 @@ func NewGitHubRateLimitInfo(res *http.Response) GitHubRateLimitInfo {
 		Used:      header.GetInt64(headerRateLimitUsed),
 		Reset:     header.GetInt64(headerRateLimitReset),
 	}
+}
+
+type ErrorWithRateLimit struct {
+	error
+	GitHubRateLimitInfo
+}
+
+func NewErrorWithRateLimit(resp *http.Response, err error) ErrorWithRateLimit {
+	return ErrorWithRateLimit{
+		error:               err,
+		GitHubRateLimitInfo: NewGitHubRateLimitInfo(resp),
+	}
+}
+
+func (e ErrorWithRateLimit) GetError() error {
+	return e.error
 }
 
 type intHeader http.Header
