@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
-	"github.com/google/go-github/v29/github"
+	"github.com/google/go-github/v62/github"
 )
 
 const (
@@ -53,7 +53,7 @@ var _ http.RoundTripper = &Transport{}
 
 // NewKeyFromFile returns a Transport using a private key from file.
 func NewKeyFromFile(tr http.RoundTripper, appID, installationID int64, privateKeyFile string) (*Transport, error) {
-	privateKey, err := ioutil.ReadFile(privateKeyFile)
+	privateKey, err := os.ReadFile(privateKeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("could not read private key: %s", err)
 	}

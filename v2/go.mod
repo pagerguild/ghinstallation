@@ -1,9 +1,11 @@
-module github.com/burke/ghinstallation/v2
+module github.com/pagerguild/ghinstallation/v2
 
-go 1.13
+go 1.23.2
 
 require (
-	github.com/dgrijalva/jwt-go/v4 v4.0.0-preview1
-	github.com/google/go-cmp v0.4.0
-	github.com/google/go-github/v35 v35.1.0
+	github.com/golang-jwt/jwt/v5 v5.2.1
+	github.com/google/go-cmp v0.6.0
+	github.com/google/go-github/v62 v62.0.0
 )
+
+require github.com/google/go-querystring v1.1.0 // indirect

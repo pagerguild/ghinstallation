@@ -2,7 +2,6 @@ package ghinstallation
 
 import (
 	"bytes"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	jwt "github.com/dgrijalva/jwt-go/v4"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/go-cmp/cmp"
 )
 
 func TestNewAppsTransportKeyFromFile(t *testing.T) {
-	tmpfile, err := ioutil.TempFile("", "example")
+	tmpfile, err := os.CreateTemp("", "example")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,12 +79,16 @@ func TestJWTExpiry(t *testing.T) {
 	check := RoundTrip{
 		rt: func(req *http.Request) (*http.Response, error) {
 			token := strings.Fields(req.Header.Get("Authorization"))[1]
-			tok, err := jwt.ParseWithClaims(token, &jwt.StandardClaims{}, jwt.KnownKeyfunc(jwt.SigningMethodRS256, key))
+
+			// Use jwt.NewParser and the custom keyfunc
+			tok, err := jwt.NewParser().ParseWithClaims(token, &jwt.RegisteredClaims{}, func(t *jwt.Token) (interface{}, error) {
+				return key.Public(), nil
+			})
 			if err != nil {
 				t.Fatalf("jwt parse: %v", err)
 			}
 
-			c := tok.Claims.(*jwt.StandardClaims)
+			c := tok.Claims.(*jwt.RegisteredClaims)
 			if c.ExpiresAt == nil {
 				t.Fatalf("missing exp claim")
 			} else if c.ExpiresAt.Time != c.ExpiresAt.Truncate(time.Second) {
