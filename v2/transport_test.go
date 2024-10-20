@@ -17,7 +17,7 @@ import (
 
 const (
 	installationID = 1
-	appID          = 2
+	appID          = "appID123"
 	token          = "abc123"
 )
 
