@@ -1,8 +1,6 @@
 package ratelimit
 
 import (
-	"sync"
-
 	lru "github.com/hashicorp/golang-lru"
 )
 
@@ -17,12 +15,11 @@ import (
 type rateLimiterCache struct {
 	rateLimiters *lru.Cache // LRU cache for managing semaphores
 	limit        int64      // concurrency limit per semaphore
-	mu           sync.RWMutex
 }
 
 func NewRateLimiterCache(maxConcurrent int, maxTenants int) *rateLimiterCache {
 	lruCache, _ := lru.NewWithEvict(maxTenants, func(_, value interface{}) {
-		(value.(RateLimiter)).close()
+		(value.(*RateLimiter)).Close()
 	})
 
 	return &rateLimiterCache{
@@ -31,26 +28,22 @@ func NewRateLimiterCache(maxConcurrent int, maxTenants int) *rateLimiterCache {
 	}
 }
 
+// Find a rate limiter for the installation ID, and if not, make one.
 func (sm *rateLimiterCache) GetRateLimiter(installationID int64) *RateLimiter {
 	// Check if semaphore exists in the LRU cache
-	sm.mu.RLock()
 	sem, exists := sm.rateLimiters.Get(installationID)
-	sm.mu.RUnlock()
 
 	if exists {
 		return sem.(*RateLimiter)
 	}
 
 	// Lock for writing if semaphore does not exist
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
 	// Double-check if the rate limiter was added by another goroutine
 	if sem, exists := sm.rateLimiters.Get(installationID); exists {
 		return sem.(*RateLimiter)
 	}
 
-	rl := newRateLimiter(sm.limit)
+	rl := NewRateLimiter(sm.limit)
 	sm.rateLimiters.Add(installationID, rl)
 	return rl
 }
