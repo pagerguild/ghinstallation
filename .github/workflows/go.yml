@@ -2,28 +2,32 @@ name: Go
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
-    branches: [master]
+    branches: [main]
 
 jobs:
-  build:
-    name: Build
+  
+  build_v2:
+    name: Build v2 Module
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Go 1.13
+      - name: Set up Go 1.23
         uses: actions/setup-go@v2
         with:
-          go-version: 1.13
+          go-version: 1.23
 
       - name: Check out code
         uses: actions/checkout@v2
 
-      - name: Get dependencies
+      - name: Change directory to v2
+        run: cd v2
+
+      - name: Get dependencies for v2 module
         run: go get -v -t -d ./...
 
-      - name: Build
+      - name: Build v2 module
         run: go build -v ./...
 
-      - name: Test
+      - name: Test v2 module
         run: go test -v ./...
