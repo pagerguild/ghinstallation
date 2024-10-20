@@ -37,9 +37,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Release ${{ github.ref }}            # Use the tag as the release title
-          tag_name: ${{ github.ref }}                # The pushed tag
-          body_path: ${{ steps.changelog.outputs.changelog }}  # Use the changelog generated in the previous step
+          name: Release ${{ github.ref }}  # Use the tag as the release title
+          tag_name: ${{ github.ref }}      # The pushed tag
+          body_path: /github/workspace/CHANGELOG.md  # Use the absolute path to the changelog file
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
