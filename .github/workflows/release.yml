@@ -39,6 +39,6 @@ jobs:
         with:
           name: Release ${{ github.ref }}  # Use the tag as the release title
           tag_name: ${{ github.ref }}      # The pushed tag
-          body_path: /github/workspace/CHANGELOG.md  # Use the absolute path to the changelog file
+          body: ${{ steps.changelog.outputs.changelog }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
