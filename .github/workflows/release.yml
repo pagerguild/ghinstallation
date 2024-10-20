@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*.*.*'   # Only trigger on version tags, e.g., v1.0.0
 
+permissions:
+    contents: write
+
 jobs:
   test_and_release_v2:
     name: Test and Release v2 Module
