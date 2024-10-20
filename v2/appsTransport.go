@@ -2,6 +2,7 @@ package ghinstallation
 
 import (
 	"crypto/rsa"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/pagerguild/ghinstallation/v2/internal/ratelimit"
 )
 
 // AppsTransport provides a http.RoundTripper by wrapping an existing
@@ -20,11 +23,12 @@ import (
 //
 // See https://developer.github.com/apps/building-integrations/setting-up-and-registering-github-apps/about-authentication-options-for-github-apps/
 type AppsTransport struct {
-	BaseURL string            // BaseURL is the scheme and host for GitHub API, defaults to https://api.github.com
-	Client  Client            // Client to use to refresh tokens, defaults to http.Client with provided transport
-	tr      http.RoundTripper // tr is the underlying roundtripper being wrapped
-	key     *rsa.PrivateKey   // key is the GitHub App's private key
-	appID   int64             // appID is the GitHub App's ID
+	BaseURL     string            // BaseURL is the scheme and host for GitHub API, defaults to https://api.github.com
+	Client      Client            // Client to use to refresh tokens, defaults to http.Client with provided transport
+	tr          http.RoundTripper // tr is the underlying roundtripper being wrapped
+	key         *rsa.PrivateKey   // key is the GitHub App's private key
+	appID       int64             // appID is the GitHub App's ID
+	rateLimiter *ratelimit.RateLimiter
 }
 
 // NewAppsTransportKeyFromFile returns a AppsTransport using a private key from file.
@@ -54,16 +58,17 @@ func NewAppsTransport(tr http.RoundTripper, appID int64, privateKey []byte) (*Ap
 // NewAppsTransportFromPrivateKey returns an AppsTransport using a crypto/rsa.(*PrivateKey).
 func NewAppsTransportFromPrivateKey(tr http.RoundTripper, appID int64, key *rsa.PrivateKey) *AppsTransport {
 	return &AppsTransport{
-		BaseURL: apiBaseURL,
-		Client:  &http.Client{Transport: tr},
-		tr:      tr,
-		key:     key,
-		appID:   appID,
+		BaseURL:     apiBaseURL,
+		Client:      &http.Client{Transport: tr},
+		tr:          tr,
+		key:         key,
+		appID:       appID,
+		rateLimiter: rateLimiters.GetRateLimiter(appID),
 	}
 }
 
 // RoundTrip implements http.RoundTripper interface.
-func (t *AppsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *AppsTransport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
 	// GitHub rejects expiry and issue timestamps that are not an integer,
 	// while the jwt-go library serializes to fractional timestamps.
 	// Truncate them before passing to jwt-go.
@@ -84,6 +89,11 @@ func (t *AppsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.Header.Set("Authorization", "Bearer "+ss)
 	req.Header.Add("Accept", acceptHeader)
 
-	resp, err := t.tr.RoundTrip(req)
+	if t.rateLimiter.Acquire(req.Context()) != nil {
+		return nil, errors.New("timed out waiting for rate limits (AppsTransport.RoundTrip)")
+	}
+	defer t.rateLimiter.Release(resp)
+
+	resp, err = t.tr.RoundTrip(req)
 	return resp, err
 }
