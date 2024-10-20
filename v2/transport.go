@@ -129,6 +129,9 @@ func (t *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error
 	if err = t.rateLimiter.Acquire(req.Context()); err != nil {
 		return nil, fmt.Errorf("timed out waiting to send http request: %w", err)
 	}
+	// Note that this should always be called, even if the response is nil.
+	// There must be exact symmetry in calls to Acquire() and Release() to ensure
+	// the semaphore will be emptied.
 	defer t.rateLimiter.Release(resp)
 
 	token, err := t.Token(req.Context())
