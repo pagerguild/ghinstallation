@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -203,7 +204,14 @@ func (t *Transport) refreshToken(ctx context.Context) error {
 
 	t.appsTransport.BaseURL = t.BaseURL
 	t.appsTransport.Client = t.Client
-	resp, err := t.appsTransport.RoundTrip(req)
+	var resp *http.Response
+
+	if t.rateLimiter.Acquire(ctx) != nil {
+		return errors.New("unable to acquire rate limit access for token refresh")
+	}
+	defer t.rateLimiter.Release(resp)
+
+	resp, err = t.appsTransport.RoundTrip(req)
 	e := &HTTPError{
 		RootCause:      err,
 		InstallationID: t.installationID,
