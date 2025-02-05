@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-github/v62/github"
+	"github.com/google/go-github/v69/github"
 )
 
 const (
@@ -216,11 +216,11 @@ func TestRefreshTokenWithParameters(t *testing.T) {
 				Token:     "token_string",
 				ExpiresAt: time.Now(),
 				Repositories: []github.Repository{{
-					ID: github.Int64(1234),
+					ID: github.Ptr(int64(1234)),
 				}},
 				Permissions: github.InstallationPermissions{
-					Contents: github.String("write"),
-					Issues:   github.String("read"),
+					Contents: github.Ptr("write"),
+					Issues:   github.Ptr("read"),
 				},
 			}
 			tokenReadWriter, err := GetReadWriter(accessToken)
